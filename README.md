@@ -1,3 +1,5 @@
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/dfci/CellBox/master)
+
 # Installation
 
 In pertbio folder run:
@@ -8,7 +10,7 @@ python3.6 setup.py install
 
 Only python3.6 supported. Anaconda or pipenv is recommended to create python environment
 
-# Quick start
+# Quick Start
 Now you can test if the installation is successful
 
 ```
@@ -16,12 +18,19 @@ import pertbio
 pertbio.VERSION
 ```
 
+## Quick Start with Binder 
 
-To quickly start an example model training, in project folder do
+Easily try PertBio online with Binder 
+
+1. Go to: https://mybinder.org/v2/gh/dfci/CellBox/master
+2. From the New dropdown, click Terminal 
+3. Run the following command: 
 
 ```
-python scripts/main.py --experiment_config_path=configs/example.cfg.json
+python scripts/main.py -config=configs/example.cfg.json
 ```
+
+Alternatively, in project folder, do the same command
 
 # Project Structure
 
@@ -46,22 +55,23 @@ python scripts/main.py --experiment_config_path=configs/example.cfg.json
 
 ### __Step 2: Use main.py to construct models using random partition of dataset__
 
+The experiment type configuration file is specified by --experiment_config_path OR -config
+
 ```
-python scripts/main.py --experiment_config_path=configs/random_partition.cfg.json
+python scripts/main.py -config=configs/random_partition.cfg.json
 ```
 
 Note: always run the script in the root folder.
 
 
-
-A random seed can also be assigned by using argument --working_index
+A random seed can also be assigned by using argument --working_index OR -i
 
 ```
-python scripts/main.py --experiment_config_path=configs/random_partition.cfg.json --working_index=1234
+python scripts/main.py -config=configs/random_partition.cfg.json -i=1234
 ```
 
 
-When training with leave-one-out validation, make sure to specify the drug index to leave out from training.
+When training with leave-one-out validation, make sure to specify the drug index --drug_index OR -drug to leave out from training.
 
 
 ### __Step 3: Analyze result files__

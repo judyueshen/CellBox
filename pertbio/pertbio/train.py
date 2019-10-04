@@ -29,15 +29,22 @@ def train_substage(model, dataset, sess, lr_val, l1lamda, iterations, n_iter_buf
         substage_i = 1
 
     loss_min = args.loss_min
+    best_params = Screenshot()
+    best_params.set_verbose(args)
+
     n_unchanged = 0
     for i in range(iterations):
         t0 = time.clock()
-        drop_out_index = np.random.choice(range(dataset['train_data'].shape[0]), args.n_s1, replace = False)
+
+        # batch_index = np.random.choice(range(dataset['train_data'].shape[0]), args.n_s1, replace = False)
+        # by args.dropout_percent
+        batch_index = np.random.choice(range(dataset['train_data'].shape[0]), args.batchsize, replace = False)
+        # by batchsize
 
         # Feeding data
         train_set = {
-            model.x_gold: dataset['train_data'].iloc[drop_out_index,:],
-            model.mu: dataset['pert_train'].iloc[drop_out_index,:],
+            model.x_gold: dataset['train_data'].iloc[batch_index,:],
+            model.mu: dataset['pert_train'].iloc[batch_index,:],
             model.lr: lr_val,
             model.l1_lambda: l1lamda
         }
@@ -62,14 +69,16 @@ def train_substage(model, dataset, sess, lr_val, l1lamda, iterations, n_iter_buf
         if loss_valid_i < loss_min:
             loss_min = loss_valid_i
             n_unchanged = 0
-            save_best_params(sess, model, substage_i, args = args,
+            best_params.screenshot(sess, model, substage_i, args = args,
                              node_index = args.dataset['node_index'], loss_min = loss_min)
+
         elif n_unchanged < n_iter_buffer:
             n_unchanged+=1
         else:
             break
         append_record("record_eval.csv", [i, loss_train_i, loss_valid_i, loss_train_mse_i, loss_valid_mse_i, loss_test_mse_i, time.clock() - t0])
 
+    best_params.save()
     args.logger.log("------------------ Substage {} finished!-------------------".format(substage_i))
     save_model(args.saver, model, sess, './'+args.ckpt_name)
 
@@ -97,7 +106,7 @@ def train_model(args):
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
     try:
-        saver.restore(sess, args.ckpt_name)
+        args.saver.restore(sess, './'+args.ckpt_name)
         print('Load existing model at {}...'.format(args.ckpt_name))
     except:
         print('Create new model at {}...'.format(args.ckpt_name))
@@ -124,28 +133,41 @@ def save_model(saver, model, sess, path):
     tmp = saver.save(sess, path)
     print("Model saved in path: %s" % tmp)
 
-def save_best_params(sess, model, substage_i, node_index, loss_min, args):
-    # Save the variables to disk.
-    W_screenshot, alpha_screenshot, eps_screenshot = sess.run(model.get_params())
-    w_values = pd.DataFrame(W_screenshot, columns=node_index[0], index=node_index[0])
-    for file in glob.glob(str(substage_i) + "_best.*.csv"):
-        os.remove(file)
-    w_values.to_csv(str(substage_i) + "_best.W.loss." + str(loss_min) + ".csv")
-    alpha_values = pd.DataFrame(alpha_screenshot, index=node_index[0])
-    alpha_values.to_csv(str(substage_i) + "_best.alpha.loss." + str(loss_min) + ".csv")
-    eps_values = pd.DataFrame(eps_screenshot, index=node_index[0])
-    eps_values.to_csv(str(substage_i) + "_best.eps.loss." + str(loss_min) + ".csv")
-    y_hat = sess.run(model.xhat, feed_dict = {model.mu: args.dataset['pert_test']})
-    y_hat = pd.DataFrame(y_hat, columns=node_index[0])
-    y_hat.to_csv(str(substage_i) + "_best.test_hat.loss." + str(loss_min) + ".csv")
+class Screenshot(dict):
 
-    # convergence test - last model
-    summary_train = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_train']})
-    summary_test = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_test']})
-    summary_valid = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_valid']})
-    summary_train = pd.DataFrame(summary_train, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
-    summary_train.to_csv(str(substage_i) + "_best.sum.train.loss." + str(loss_min) + ".csv")
-    summary_test = pd.DataFrame(summary_test, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
-    summary_test.to_csv(str(substage_i) + "_best.sum.test.loss." + str(loss_min) + ".csv")
-    summary_valid = pd.DataFrame(summary_valid, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
-    summary_valid.to_csv(str(substage_i) + "_best.sum.valid.loss." + str(loss_min) + ".csv")
+    def set_verbose(self, args):
+        try:
+            self.verbose = args.verbose # 0: no output, 1: params only, 2: params + prediction
+        except:
+            self.verbose = 2 # default verbose: 2
+
+    def screenshot(self, sess, model, substage_i, node_index, loss_min, args):
+
+        self.substage_i = substage_i
+        self.loss_min = loss_min
+        # Save the variables to disk.
+        if self.verbose > 0:
+            W_screenshot, alpha_screenshot, eps_screenshot = sess.run(model.get_params())
+            w_values = pd.DataFrame(W_screenshot, columns=node_index[0], index=node_index[0])
+            alpha_values = pd.DataFrame(alpha_screenshot, index=node_index[0])
+            eps_values = pd.DataFrame(eps_screenshot, index=node_index[0])
+            self.update({'W': w_values, 'alpha': alpha_values, 'eps_values': eps_values})
+
+        if self.verbose > 1:
+            y_hat = sess.run(model.xhat, feed_dict = {model.mu: args.dataset['pert_test']})
+            y_hat = pd.DataFrame(y_hat, columns=node_index[0])
+            self.update({'y_hat': y_hat})
+            # convergence test - last model
+            summary_train = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_train']})
+            summary_test = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_test']})
+            summary_valid = sess.run(model.convergence_metric, feed_dict = {model.mu: args.dataset['pert_valid']})
+            summary_train = pd.DataFrame(summary_train, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
+            summary_test = pd.DataFrame(summary_test, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
+            summary_valid = pd.DataFrame(summary_valid, columns=np.vstack([node_index.values+'_mean', node_index.values+'_sd', node_index.values+'_dxdt']))
+            self.update({'summary_train': summary_train, 'summary_valid': summary_valid, 'summary_test': summary_test})
+
+    def save(self):
+        for file in glob.glob(str(self.substage_i) + "_best.*.csv"):
+            os.remove(file)
+        for key in self:
+            self[key].to_csv("{}_best.{}.loss.{}.csv".format(self.substage_i, key, self.loss_min))
